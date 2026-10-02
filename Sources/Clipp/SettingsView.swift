@@ -117,7 +117,7 @@ struct SettingsView: View {
             }
 
             Section {
-                LabeledContent("Histórico (\(model.total) itens)", value: bytes(model.diskUsage.historyBytes))
+                LabeledContent("Histórico (\(model.total) itens)", value: bytes(model.diskUsage))
                 Text("Inclui banco de dados, miniaturas e arquivos auxiliares do SQLite.")
                     .font(.caption).foregroundStyle(.secondary)
                 Button("Abrir pasta de dados") { NSWorkspace.shared.open(model.directory) }

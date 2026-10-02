@@ -20,6 +20,7 @@ final class ClipboardModelTests: XCTestCase {
 
         write("Before launch")
         let model = ClipboardModel(pasteboard: pasteboard, directory: directory)
+        model.isHistoryVisible = true
         let store = try XCTUnwrap(model.store)
         await model.poll()
         XCTAssertTrue(model.entries.isEmpty)
@@ -73,6 +74,7 @@ final class ClipboardModelTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         let model = ClipboardModel(pasteboard: pasteboard, directory: directory)
+        model.isHistoryVisible = true
         let store = try XCTUnwrap(model.store)
         // A valid one-pixel opaque red RGBA PNG, including CRCs.
         let png = try XCTUnwrap(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=="))
@@ -141,6 +143,7 @@ final class ClipboardModelTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         let model = ClipboardModel(pasteboard: pasteboard, directory: directory)
+        model.isHistoryVisible = true
         pasteboard.clearContents()
         XCTAssertTrue(pasteboard.setString("Saved item", forType: .string))
         await model.poll()
@@ -166,6 +169,7 @@ final class ClipboardModelTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         let model = ClipboardModel(pasteboard: pasteboard, directory: directory)
+        model.isHistoryVisible = true
         let store = try XCTUnwrap(model.store)
         var connection: OpaquePointer?
         XCTAssertEqual(sqlite3_open(directory.appendingPathComponent("history.sqlite3").path, &connection), SQLITE_OK)
@@ -191,4 +195,91 @@ final class ClipboardModelTests: XCTestCase {
         let recoveredCount = try await store.count()
         XCTAssertEqual(recoveredCount, 2)
     }
+
+    @MainActor
+    func testHiddenCaptureDoesNotLoadHistoryOrStatsAndSettingsDoNotLoadRows() async throws {
+        let pasteboard = NSPasteboard.withUniqueName()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {
+            pasteboard.releaseGlobally()
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let model = ClipboardModel(pasteboard: pasteboard, directory: directory)
+        let store = try XCTUnwrap(model.store)
+        func capture(_ text: String) async {
+            pasteboard.clearContents()
+            XCTAssertTrue(pasteboard.setString(text, forType: .string))
+            await model.poll()
+        }
+        await capture("Captura em segundo plano")
+        let count = try await store.count()
+        XCTAssertEqual(count, 1)
+        XCTAssertTrue(model.entries.isEmpty)
+        XCTAssertEqual(model.total, 0)
+        XCTAssertEqual(model.diskUsage, 0)
+
+        model.isSettingsVisible = true
+        await model.refreshStats()
+        XCTAssertEqual(model.total, 1)
+        XCTAssertGreaterThan(model.diskUsage, 0)
+        await capture("Configurações abertas")
+        XCTAssertEqual(model.total, 2)
+        XCTAssertTrue(model.entries.isEmpty)
+
+        model.isSettingsVisible = false
+        model.isHistoryVisible = true
+        await model.reload()
+        XCTAssertEqual(model.entries.count, 2)
+        await capture("Histórico aberto")
+        XCTAssertEqual(model.entries.first?.text, "Histórico aberto")
+        XCTAssertEqual(model.total, 3)
+
+        let usage = model.diskUsage
+        model.isHistoryVisible = false
+        XCTAssertTrue(model.entries.isEmpty)
+        XCTAssertEqual(model.total, 3)
+        XCTAssertEqual(model.diskUsage, usage)
+        model.isSettingsVisible = true
+        await model.clearHistory()
+        XCTAssertTrue(model.entries.isEmpty)
+        XCTAssertEqual(model.total, 0)
+        XCTAssertFalse(model.hasMore)
+        XCTAssertFalse(model.isLoading)
+        XCTAssertFalse(model.isLoadingMore)
+    }
+
+    @MainActor
+    func testPartiallyWrittenBatchRetriesOnlyRemainingItems() async throws {
+        let pasteboard = NSPasteboard.withUniqueName()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {
+            pasteboard.releaseGlobally()
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let model = ClipboardModel(pasteboard: pasteboard, directory: directory)
+        model.isHistoryVisible = true
+        let store = try XCTUnwrap(model.store)
+        var connection: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(directory.appendingPathComponent("history.sqlite3").path, &connection), SQLITE_OK)
+        defer { sqlite3_close(connection) }
+        XCTAssertEqual(sqlite3_exec(connection, "CREATE TRIGGER block_second BEFORE INSERT ON clipboard_entries WHEN NEW.text = 'Segundo' BEGIN SELECT RAISE(ABORT, 'test'); END", nil, nil, nil), SQLITE_OK)
+        let items = ["Primeiro", "Segundo", "Terceiro"].map { text in
+            let item = NSPasteboardItem()
+            item.setString(text, forType: .string)
+            return item
+        }
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.writeObjects(items))
+        await model.poll()
+        let partialCount = try await store.count()
+        XCTAssertEqual(partialCount, 1)
+        XCTAssertTrue(model.errorMessage?.hasPrefix("2 cópia(s)") == true)
+
+        XCTAssertEqual(sqlite3_exec(connection, "DROP TRIGGER block_second", nil, nil, nil), SQLITE_OK)
+        await model.poll()
+        XCTAssertEqual(model.entries.map(\.text), ["Terceiro", "Segundo", "Primeiro"])
+        XCTAssertEqual(model.total, 3)
+        XCTAssertNil(model.errorMessage)
+    }
+
 }

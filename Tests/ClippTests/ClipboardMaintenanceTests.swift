@@ -18,14 +18,14 @@ final class ClipboardMaintenanceTests: XCTestCase {
         try await store!.insert(ClipboardContent(kind: .image, imageData: image, thumbnail: Data([0, 1, 255])),
                                 sourceApp: "Imagens")
         let before = try await store!.diskUsage()
-        XCTAssertGreaterThan(before.historyBytes, 0)
+        XCTAssertGreaterThan(before, 0)
 
         try await store!.clear()
         let count = try await store!.count()
         XCTAssertEqual(count, 0)
         let after = try await store!.diskUsage()
-        XCTAssertGreaterThan(after.historyBytes, 0)
-        XCTAssertLessThan(after.historyBytes, before.historyBytes)
+        XCTAssertGreaterThan(after, 0)
+        XCTAssertLessThan(after, before)
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("Backups").path))
 
         store = nil

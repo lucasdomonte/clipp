@@ -15,6 +15,7 @@ final class HistoryPaginationTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         let model = ClipboardModel(pasteboard: pasteboard, directory: directory, defaults: defaults)
+        model.isHistoryVisible = true
         let store = try XCTUnwrap(model.store)
         let date = Date(timeIntervalSince1970: 1_700_000_000)
         for index in 0..<75 {
@@ -51,6 +52,17 @@ final class HistoryPaginationTests: XCTestCase {
         let current = try await store.fetch(limit: 30)
         XCTAssertEqual(model.entries.map(\.id), current.map(\.id))
         XCTAssertEqual(model.entries.first?.text, "Nova cópia")
+        XCTAssertTrue(model.hasMore)
+
+        model.isHistoryVisible = false
+        XCTAssertTrue(model.entries.isEmpty)
+        XCTAssertEqual(model.total, 75)
+        XCTAssertFalse(model.hasMore)
+        XCTAssertFalse(model.isLoadingMore)
+        model.isHistoryVisible = true
+        await model.reload()
+        XCTAssertEqual(model.entries.map(\.id), current.map(\.id))
+        XCTAssertEqual(model.entries.count, 30)
         XCTAssertTrue(model.hasMore)
     }
 

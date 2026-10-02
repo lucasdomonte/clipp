@@ -21,7 +21,10 @@ case "${1:-}" in
 esac
 swift build "${build_options[@]}"
 bin_dir="$(swift build "${build_options[@]}" --show-bin-path)"
-app="$root/dist/Clipp.app"
+mkdir -p "$root/dist"
+stage="$(mktemp -d "$root/dist/.app-stage.XXXXXX")"
+trap 'rm -rf "$stage"' EXIT
+app="$stage/Clipp.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin_dir/Clipp" "$app/Contents/MacOS/Clipp"
 cp "$root/Resources/Info.plist" "$app/Contents/Info.plist"
@@ -39,4 +42,6 @@ sips -z 18 18 "$icon" --out "$app/Contents/Resources/MenuBarIconTemplate.png" >/
 sips -z 36 36 "$icon" --out "$app/Contents/Resources/MenuBarIconTemplate@2x.png" >/dev/null
 codesign --force --sign "$signing_identity" --identifier br.com.clipp.app "$app"
 codesign --verify --strict "$app"
-printf 'Aplicativo criado em: %s\n' "$app"
+rm -rf "$root/dist/Clipp.app"
+mv "$app" "$root/dist/Clipp.app"
+printf 'Aplicativo criado em: %s\n' "$root/dist/Clipp.app"

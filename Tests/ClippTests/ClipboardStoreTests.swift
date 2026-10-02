@@ -58,8 +58,14 @@ final class ClipboardStoreTests: XCTestCase {
         XCTAssertEqual(matches.map(\.id), [entries[2].id])
         let noMatches = try await store!.fetch(query: "' OR 1=1 --")
         XCTAssertTrue(noMatches.isEmpty)
-        let page = try await store!.fetch(limit: 1, offset: 1)
+        let page = try await store!.fetch(limit: 1, before: entries[0])
         XCTAssertEqual(page.map(\.id), [entries[1].id])
+        for limit in [0, -1] {
+            do {
+                _ = try await store!.fetch(limit: limit)
+                XCTFail("A non-positive page size must be rejected")
+            } catch { }
+        }
 
         do {
             try await store!.insert(ClipboardContent(kind: .text, imageData: image), sourceApp: nil)
