@@ -1,0 +1,52 @@
+CLIPP — HISTÓRICO DO CLIPBOARD
+
+Requer macOS 13 ou superior. Compatível com Macs Apple Silicon e Intel.
+
+INSTALAR
+1. Abra o arquivo .dmg.
+2. Arraste Clipp.app para a pasta Applications (Aplicativos) desta janela.
+   Se já estiver usando o Clipp, encerre-o antes de substituir o aplicativo.
+3. Ejete o disco Clipp no Finder.
+4. Abra Clipp pela pasta Aplicativos. O ícone aparece na barra superior do Mac.
+
+PRIMEIRA ABERTURA
+Esta versão usa um certificado local autossinado fixo, adequado para testes,
+sem certificado Developer ID e sem notarização da Apple. A assinatura não
+confere a confiança da Apple; o macOS pode bloquear a primeira abertura.
+Se você recebeu o arquivo de uma fonte confiável e confia na sua origem, tente
+abrir o app instalado. Em seguida, vá a Ajustes do Sistema > Privacidade e
+Segurança > Abrir Mesmo Assim e confirme Abrir.
+Orientação oficial: https://support.apple.com/pt-br/102445
+Não é necessário importar certificados nem alterar a confiança em certificados
+raiz. A chave privada de assinatura não faz parte deste instalador.
+
+ATUALIZAÇÃO PARA A ASSINATURA FIXA (0.5.1)
+Se você já usava uma versão anterior, renove a autorização de Acessibilidade
+uma vez nesta transição:
+1. Encerre o Clipp.
+2. Em Ajustes do Sistema > Privacidade e Segurança > Acessibilidade, remova
+   a entrada antiga do Clipp usando o botão −.
+3. Use + para adicionar /Applications/Clipp.app e habilite a permissão.
+4. Reabra o Clipp. Clique em um campo de texto, abra o histórico com ⌘⇧V e
+   selecione um item para testar a colagem.
+As próximas versões reutilizam o mesmo certificado. Confira a colagem após
+atualizar; a assinatura por si só não confirma a permissão no seu Mac.
+
+USAR
+- Copie textos ou imagens normalmente. Clique no ícone do Clipp para ver o histórico.
+- O atalho padrão é ⌘⇧V (Command + Shift + V); ele pode ser alterado nas configurações.
+- Pelo atalho, selecionar um item tenta colá-lo no aplicativo anterior. Para isso,
+  autorize Acessibilidade pelo botão “Autorizar colagem automática” nas configurações.
+  Essa permissão é opcional: sem ela, use ⌘V para colar manualmente.
+- Permita notificações se quiser avisos ao copiar. Som e prévia do texto podem ser
+  desligados nas configurações. Se o macOS pedir acesso ao clipboard, autorize
+  para que o Clipp possa registrar suas cópias.
+- “Iniciar com o Mac” começa ligado e pode ser desligado nas configurações.
+
+SEUS DADOS
+O histórico fica somente no seu Mac, em:
+~/Library/Application Support/Clipp/history.sqlite3
+O instalador não contém o histórico nem as preferências de quem enviou o arquivo.
+Sem limite de itens, o espaço ocupado cresce conforme novas cópias são registradas.
+Você pode limitar a quantidade e consultar o uso de disco nas configurações.
+“Limpar todo o histórico” apaga os itens após confirmação, sem backup ou desfazer.
