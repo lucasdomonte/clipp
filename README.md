@@ -6,6 +6,8 @@ Histórico de clipboard para macOS, feito em Swift. Fica na barra de menus: cliq
 
 Requer **macOS 13 ou superior**, em Mac **Apple Silicon ou Intel**.
 
+Baixe o instalador e seu arquivo de verificação na [página de versões](https://github.com/lucasdomonte/clipp/releases). O DMG pronto usa a assinatura local fixa do mantenedor; quem instala não precisa compilar nem gerar uma chave.
+
 1. Abra o arquivo `Clipp-<versão>-universal.dmg`.
 2. Arraste `Clipp.app` para a pasta **Applications (Aplicativos)** da janela. Encerre uma versão anterior do Clipp antes de substituí-la.
 3. Ejete o disco Clipp no Finder e abra o app pela pasta **Aplicativos**.
@@ -15,9 +17,21 @@ Esta versão usa um **certificado local autossinado fixo**, adequado para testes
 
 Autorize as notificações se quiser avisos ao copiar. A permissão de Acessibilidade é opcional e serve para a colagem automática: use **Autorizar colagem automática** nas configurações. Sem ela, copie pelo histórico e cole manualmente com **⌘V**. O histórico é local; o DMG inclui apenas o aplicativo e as instruções, sem dados ou preferências de quem gerou o instalador.
 
-**Ao atualizar da assinatura antiga para a versão 0.5.1:** encerre o Clipp, remova a entrada antiga em **Ajustes do Sistema → Privacidade e Segurança → Acessibilidade**, adicione `/Applications/Clipp.app`, habilite e reabra o aplicativo. Essa troca de identidade exige renovar a autorização uma vez. Nas próximas versões, será reutilizado o mesmo certificado; a preservação da permissão deve ser conferida no Mac após a atualização, testando a colagem em um campo de texto.
+**Ao atualizar de uma versão anterior à 0.5.1:** encerre o Clipp, remova a entrada antiga em **Ajustes do Sistema → Privacidade e Segurança → Acessibilidade**, adicione `/Applications/Clipp.app`, habilite e reabra o aplicativo. Essa troca de identidade exige renovar a autorização uma vez. A versão 0.5.2 reutiliza o certificado da 0.5.1; confira a preservação da permissão no Mac após a atualização, testando a colagem em um campo de texto.
 
 Quem recebe o instalador não precisa importar certificados, receber a chave privada nem alterar a confiança em certificados raiz.
+
+## Novidades da versão 0.5.2
+
+- Menos trabalho em segundo plano: com as janelas fechadas, novas cópias não recarregam a lista nem consultam contagem e espaço em disco.
+- Linhas e miniaturas são liberadas ao fechar o histórico, inclusive quando uma busca ou página ainda está sendo carregada.
+- O ícone e o atalho compartilham a mesma janela nativa, preservando as ações de copiar pelo ícone e colar pelo atalho.
+- Consultas sem busca evitam filtros desnecessários; a paginação usa data/ID e a retenção exclui os itens antigos por faixa.
+- Captura de texto sem criar tarefa extra; imagens continuam sendo preparadas fora da interface. A fila de gravação evita deslocar todos os itens e mantém a tentativa após falhas.
+- Estados duplicados e rascunhos de ícones descartados foram removidos. Nenhuma dependência nova ou migração de banco.
+- Instalador universal com a mesma identidade de assinatura local e arquivo SHA-256. Cada compilação monta um bundle limpo antes de substituir o anterior.
+
+Para conferir a atualização: copie texto e imagem, abra o histórico pelo ícone e por **⌘⇧V**, busque um item antigo, role para carregar mais e feche/reabra a janela. Teste a colagem em um campo de texto com Acessibilidade autorizada. Confira também notificações, som e uso de disco nas configurações. A suíte automatizada cobre armazenamento, paginação, captura e manutenção; a autorização do macOS precisa ser conferida no próprio Mac.
 
 ## Gerar o instalador para compartilhar
 
@@ -25,7 +39,15 @@ Quem recebe o instalador não precisa importar certificados, receber a chave pri
 ./scripts/build-dmg.sh
 ```
 
-Gera `dist/Clipp-<versão>-universal.dmg` com binário para Apple Silicon e Intel, o atalho para Aplicativos e o arquivo `LEIA-ME.txt`. O script verifica a integridade do DMG e exibe seu SHA-256. A montagem usa uma pasta temporária exclusiva e copia somente o aplicativo e as instruções; histórico, banco de dados e preferências locais não entram no pacote.
+Gera `dist/Clipp-<versão>-universal.dmg` com binário para Apple Silicon e Intel, o atalho para Aplicativos e o arquivo `LEIA-ME.txt`. O script verifica a integridade do DMG e grava seu SHA-256 em um arquivo `.dmg.sha256` ao lado. A montagem usa uma pasta temporária exclusiva e copia somente o aplicativo e as instruções; histórico, banco de dados e preferências locais não entram no pacote. Distribua o DMG e o checksum como anexos de uma versão no GitHub Releases; a pasta `dist/` fica fora dos commits.
+
+Com os dois arquivos baixados na mesma pasta, confira a integridade:
+
+```sh
+shasum -a 256 -c Clipp-0.5.2-universal.dmg.sha256
+```
+
+O resultado esperado é `Clipp-0.5.2-universal.dmg: OK`. O checksum confere o arquivo baixado; não substitui a confiança na origem do instalador.
 
 ## Executar
 
@@ -64,6 +86,8 @@ O macOS pode solicitar acesso ao clipboard. Se a captura estiver bloqueada, perm
 
 A identidade `Clipp Local Code Signing` é criada uma única vez na máquina de desenvolvimento. Sua chave privada fica apenas no **Chaveiro login**; o arquivo `Resources/Signing/ClippLocal.cer` contém somente o certificado público. Os scripts reutilizam essa identidade e não recriam o certificado em cada compilação. Se ela estiver ausente, a compilação falha em vez de voltar automaticamente à assinatura ad-hoc.
 
+O certificado público sozinho não permite assinar. Para compilar em outro Mac, crie sua própria identidade de assinatura de código no Acesso às Chaves e informe-a em `CLIPP_SIGNING_IDENTITY`; ela será diferente da usada nos DMGs do mantenedor. Para apenas usar o Clipp, baixe o DMG pronto.
+
 Para verificar a assinatura e a estabilidade da identidade entre binários diferentes:
 
 ```sh
@@ -82,9 +106,10 @@ A troca para Developer ID também muda a identidade. Notarização e publicaçã
 
 ## Funcionamento
 
-- NSStatusItem para o ícone da barra, NSPopover com SwiftUI para a interface, NSPasteboard para o clipboard e SQLite do sistema para armazenamento. Sem bibliotecas externas ou nuvem.
+- NSStatusItem para o ícone da barra, um NSPanel com SwiftUI compartilhado entre o ícone e o atalho, NSPasteboard para o clipboard e SQLite do sistema para armazenamento. Sem bibliotecas externas ou nuvem.
 - Textos e imagens nativas ficam em `~/Library/Application Support/Clipp/history.sqlite3`, inclusive depois de fechar o app.
 - O histórico abre com 30 itens e carrega automaticamente os próximos 30 ao chegar perto do fim da rolagem. Cada página parte da data/ID do último item exibido, sem consultar novamente os itens anteriores. A lista usa prévias de texto e miniaturas; os originais são lidos apenas ao copiar/colar. Abrir novamente ou mudar a busca reinicia no primeiro lote.
+- Com as janelas fechadas, uma nova cópia apenas é gravada e notificada: não recarrega a lista, a contagem nem o tamanho dos arquivos. O histórico libera as linhas e miniaturas ao fechar; as estatísticas de disco são consultadas nas configurações.
 - A captura funciona enquanto o app está aberto e não está pausado. A consulta ocorre a cada 0,5 segundo; cópias intermediárias muito rápidas podem não ser capturadas.
 - Suporta texto e imagens disponibilizadas diretamente no clipboard, incluindo PNG, TIFF e JPEG. Não arquiva arquivos arbitrários copiados pelo Finder.
 - Se uma gravação falhar, mantém as cópias pendentes em memória e tenta novamente enquanto o app continuar aberto.

@@ -13,7 +13,6 @@ final class ClipboardModel: ObservableObject {
     @Published var total = 0
     @Published var hasMore = false
     @Published private(set) var isLoading = false
-    @Published private(set) var isLoadingMore = false
     @Published private(set) var paginationError: String?
     @Published var copiedID: Int64?
     @Published var notificationsEnabled: Bool {
@@ -26,7 +25,7 @@ final class ClipboardModel: ObservableObject {
         didSet { defaults.set(soundEnabled, forKey: "soundEnabled") }
     }
     @Published private(set) var historyLimit: Int
-    @Published private(set) var diskUsage = DiskUsage(historyBytes: 0)
+    @Published private(set) var diskUsage: Int64 = 0
     @Published private(set) var isMaintaining = false
     @Published var settingsMessage: String?
 
@@ -37,11 +36,16 @@ final class ClipboardModel: ObservableObject {
     private(set) var store: ClipboardStore?
     private var lastChange: Int
     private var timer: Timer?
-    private var capturing = false
-    private var pending: [(content: ClipboardContent, source: String?, date: Date)] = []
+    var isHistoryVisible = false {
+        didSet { if oldValue && !isHistoryVisible { resetHistory() } }
+    }
+    var isSettingsVisible = false
+    private var captureTask: Task<Void, Never>?
+    private var pending: ArraySlice<(content: ClipboardContent, source: String?, date: Date)> = []
     private var revision = 0
     private let pageSize = 30
     private var loadedQuery: String?
+    var isLoadingMore: Bool { isLoading && loadedQuery != nil }
 
     init(pasteboard: NSPasteboard = .general, directory: URL? = nil, defaults: UserDefaults = .standard) {
         self.pasteboard = pasteboard
@@ -72,7 +76,7 @@ final class ClipboardModel: ObservableObject {
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
         Task {
-            await runMaintenance()
+            if historyLimit > 0 { await applyHistoryLimit(historyLimit) }
             if notificationsEnabled { await feedback.requestAuthorization() }
         }
     }
@@ -88,7 +92,7 @@ final class ClipboardModel: ObservableObject {
     }
 
     func poll() async {
-        guard let store, !capturing, !isMaintaining else { return }
+        guard let store, captureTask == nil, !isMaintaining else { return }
         guard !isPaused else {
             lastChange = pasteboard.changeCount
             return
@@ -100,39 +104,47 @@ final class ClipboardModel: ObservableObject {
         }
         let change = pasteboard.changeCount
         guard change != lastChange || !pending.isEmpty else { return }
-        capturing = true
-        defer { capturing = false }
-        if change != lastChange {
-            let source = NSWorkspace.shared.frontmostApplication?.localizedName
-            let date = Date()
-            let contents = Self.readContents(from: pasteboard)
-            // A new owner can replace the pasteboard while a provider is fulfilling data.
-            guard pasteboard.changeCount == change else { return }
-            lastChange = change
-            let prepared = await Task.detached(priority: .utility) {
-                contents.map { content in
-                    guard let data = content.imageData else { return content }
-                    return ClipboardContent(kind: .image, text: nil, imageData: data, thumbnail: Self.thumbnail(for: data))
+        let task = Task {
+            if change != lastChange {
+                let source = NSWorkspace.shared.frontmostApplication?.localizedName
+                let date = Date()
+                let contents = Self.readContents(from: pasteboard)
+                // A new owner can replace the pasteboard while a provider is fulfilling data.
+                guard pasteboard.changeCount == change else { return }
+                lastChange = change
+                var prepared = contents
+                if contents.contains(where: { $0.imageData != nil }) {
+                    prepared = await Task.detached(priority: .utility) {
+                        contents.map { content in
+                            guard let data = content.imageData else { return content }
+                            return ClipboardContent(kind: .image, text: nil, imageData: data, thumbnail: Self.thumbnail(for: data))
+                        }
+                    }.value
                 }
-            }.value
-            pending.append(contentsOf: prepared.map { ($0, source, date) })
-        }
-        guard !pending.isEmpty else { return }
-        do {
-            // Retain failed writes for the next poll; successful items are never inserted twice.
-            while let item = pending.first {
-                try await store.insert(item.content, sourceApp: item.source, createdAt: item.date)
-                pending.removeFirst()
-                await feedback.notify(kind: item.content.kind, text: item.content.text,
-                                      showCopiedText: showCopiedTextInNotifications,
-                                      notifications: notificationsEnabled, sound: soundEnabled)
+                pending.append(contentsOf: prepared.map { ($0, source, date) })
             }
-            if historyLimit > 0 { _ = try await store.prune(keeping: historyLimit) }
-            errorMessage = nil
-            await reload()
-        } catch {
-            errorMessage = "\(pending.count) cópia(s) aguardando gravação. Mantenha o Clipp aberto para tentar novamente. \(error.localizedDescription)"
+            guard !pending.isEmpty else { return }
+            do {
+                // Retain failed writes for the next poll; successful items are never inserted twice.
+                while let item = pending.first {
+                    try await store.insert(item.content, sourceApp: item.source, createdAt: item.date)
+                    pending.removeFirst()
+                    await feedback.notify(kind: item.content.kind, text: item.content.text,
+                                          showCopiedText: showCopiedTextInNotifications,
+                                          notifications: notificationsEnabled, sound: soundEnabled)
+                }
+                pending = [] // Release the slice's consumed payloads.
+                if historyLimit > 0 { _ = try await store.prune(keeping: historyLimit) }
+                errorMessage = nil
+                await refreshVisibleContent()
+            } catch {
+                pending = Array(pending)[...] // Release successful payloads even when the remainder must retry.
+                errorMessage = "\(pending.count) cópia(s) aguardando gravação. Mantenha o Clipp aberto para tentar novamente. \(error.localizedDescription)"
+            }
         }
+        captureTask = task
+        await task.value
+        captureTask = nil
     }
 
     static func readContents(from pasteboard: NSPasteboard) -> [ClipboardContent] {
@@ -167,6 +179,15 @@ final class ClipboardModel: ObservableObject {
         return result as Data
     }
 
+    private func resetHistory() {
+        revision += 1
+        entries = []
+        hasMore = false
+        isLoading = false
+        loadedQuery = nil
+        paginationError = nil
+    }
+
     func reload() async {
         guard let store else { return }
         revision += 1
@@ -176,7 +197,6 @@ final class ClipboardModel: ObservableObject {
         loadedQuery = nil
         hasMore = false
         isLoading = true
-        isLoadingMore = false
         paginationError = nil
         defer { if revision == currentRevision { isLoading = false } }
         do {
@@ -187,7 +207,6 @@ final class ClipboardModel: ObservableObject {
             loadedQuery = currentQuery
             hasMore = result.count > pageSize
             total = count
-            await refreshDiskUsage()
         } catch {
             guard revision == currentRevision, query == currentQuery else { return }
             errorMessage = "Não foi possível carregar o histórico: \(error.localizedDescription)"
@@ -195,13 +214,13 @@ final class ClipboardModel: ObservableObject {
     }
 
     func loadMore() async {
-        guard let store, hasMore, !isLoading, !isLoadingMore,
+        guard let store, hasMore, !isLoading,
               loadedQuery == query, let last = entries.last else { return }
         let currentRevision = revision
         let currentQuery = query
-        isLoadingMore = true
+        isLoading = true
         paginationError = nil
-        defer { if revision == currentRevision { isLoadingMore = false } }
+        defer { if revision == currentRevision { isLoading = false } }
         do {
             let result = try await store.fetch(query: currentQuery, limit: pageSize + 1, before: last)
             guard revision == currentRevision, query == currentQuery, !Task.isCancelled else { return }
@@ -261,67 +280,62 @@ final class ClipboardModel: ObservableObject {
         guard !isMaintaining else { return }
         do {
             try await store?.delete(id: entry.id)
-            await reload()
+            await refreshVisibleContent()
         } catch {
             errorMessage = "Não foi possível excluir: \(error.localizedDescription)"
         }
     }
 
-    func refreshDiskUsage() async {
+    func refreshStats() async {
+        guard let store else { return }
         do {
-            if let store { diskUsage = try await store.diskUsage() }
+            total = try await store.count()
+            diskUsage = try await store.diskUsage()
         } catch {
             settingsMessage = "Não foi possível medir o uso do disco: \(error.localizedDescription)"
         }
     }
 
-    func runMaintenance() async {
+    private func refreshVisibleContent() async {
+        if isHistoryVisible { await reload() }
+        if isSettingsVisible { await refreshStats() }
+    }
+
+    private func maintain(failure: String, _ action: (ClipboardStore) async throws -> Void) async {
         guard let store, !isMaintaining else { return }
         isMaintaining = true
         defer { isMaintaining = false }
-        while capturing { try? await Task.sleep(nanoseconds: 50_000_000) }
+        await captureTask?.value
         do {
-            if historyLimit > 0 { _ = try await store.prune(keeping: historyLimit) }
+            try await action(store)
+            await refreshVisibleContent()
         } catch {
-            settingsMessage = "Manutenção pendente: \(error.localizedDescription)"
+            settingsMessage = "\(failure): \(error.localizedDescription)"
         }
-        await reload()
     }
 
     func applyHistoryLimit(_ limit: Int) async {
-        guard let store, !isMaintaining else { return }
         guard limit >= 0 else {
             settingsMessage = "Informe pelo menos 1 item ou selecione Sem limite."
             return
         }
-        isMaintaining = true
-        defer { isMaintaining = false }
-        while capturing { try? await Task.sleep(nanoseconds: 50_000_000) }
-        do {
+        await maintain(failure: "Não foi possível aplicar o limite") { store in
             if limit > 0 { _ = try await store.prune(keeping: limit) }
             historyLimit = limit
             defaults.set(limit, forKey: "historyLimit")
             settingsMessage = limit == 0 ? "Histórico sem limite de itens." : "Serão mantidos os \(limit) itens mais recentes."
-            await reload()
-        } catch {
-            settingsMessage = "Não foi possível aplicar o limite: \(error.localizedDescription)"
         }
     }
 
     func clearHistory() async {
-        guard let store, !isMaintaining else { return }
-        isMaintaining = true
-        defer { isMaintaining = false }
-        while capturing { try? await Task.sleep(nanoseconds: 50_000_000) }
-        do {
+        await maintain(failure: "A limpeza não foi concluída") { store in
             try await store.clear()
-            pending.removeAll()
+            resetHistory()
+            total = 0
+            pending = []
             errorMessage = nil
             copiedID = nil
             settingsMessage = "Histórico limpo."
-            await reload()
-        } catch {
-            settingsMessage = "A limpeza não foi concluída: \(error.localizedDescription)"
         }
     }
 }

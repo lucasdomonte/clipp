@@ -4,7 +4,7 @@ import Combine
 
 @MainActor
 final class GlobalShortcut: ObservableObject {
-    @Published private(set) var displayName: String
+    var displayName: String { shortcut?.displayName ?? "Não definido" }
     @Published private(set) var isRecording = false
     @Published private(set) var errorMessage: String?
     var onTrigger: (() -> Void)?
@@ -22,7 +22,7 @@ final class GlobalShortcut: ObservableObject {
 
     private let defaults: UserDefaults
     private let enabled: Bool
-    private var shortcut: Shortcut?
+    @Published private var shortcut: Shortcut?
     private var hotKey: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
     private var recordingMonitor: Any?
@@ -42,7 +42,6 @@ final class GlobalShortcut: ObservableObject {
         } else {
             shortcut = Shortcut(keyCode: UInt32(kVK_ANSI_V), modifiers: UInt32(cmdKey | shiftKey), key: "V")
         }
-        displayName = shortcut?.displayName ?? "Não definido"
     }
 
     deinit {
@@ -86,7 +85,6 @@ final class GlobalShortcut: ObservableObject {
     func clear() {
         stop()
         shortcut = nil
-        displayName = "Não definido"
         errorMessage = nil
         defaults.set(["enabled": false], forKey: Self.preferenceKey)
     }
@@ -142,7 +140,6 @@ final class GlobalShortcut: ObservableObject {
             return
         }
         shortcut = candidate
-        displayName = candidate.displayName
         defaults.set(["enabled": true, "keyCode": Int(candidate.keyCode),
                       "modifiers": Int(candidate.modifiers), "key": candidate.key], forKey: Self.preferenceKey)
         finishRecording()

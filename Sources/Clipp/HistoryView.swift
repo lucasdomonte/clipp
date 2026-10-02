@@ -58,11 +58,7 @@ struct HistoryView: View {
                     LazyVStack(spacing: 8) {
                         ForEach(model.entries) { entry in
                             HistoryRow(entry: entry, copied: model.copiedID == entry.id,
-                                       pastesOnSelect: onSelect != nil,
-                                       onSelect: {
-                                           if let onSelect { onSelect(entry) }
-                                           else { Task { await model.copy(entry) } }
-                                       },
+                                       onPaste: onSelect.map { action in { action(entry) } },
                                        onCopy: { Task { await model.copy(entry) } },
                                        onDelete: { Task { await model.delete(entry) } })
                                 .onAppear { Task { await model.loadMoreIfNeeded(after: entry) } }
@@ -106,6 +102,7 @@ struct HistoryView: View {
             if !model.query.isEmpty {
                 do { try await Task.sleep(nanoseconds: 200_000_000) } catch { return }
             }
+            guard model.isHistoryVisible else { return }
             await model.reload()
         }
     }
@@ -164,13 +161,12 @@ struct HistoryView: View {
 private struct HistoryRow: View {
     let entry: ClipboardEntry
     let copied: Bool
-    let pastesOnSelect: Bool
-    let onSelect: () -> Void
+    let onPaste: (() -> Void)?
     let onCopy: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
-        Button(action: onSelect) {
+        Button(action: onPaste ?? onCopy) {
             VStack(alignment: .leading, spacing: 9) {
                 HStack(spacing: 6) {
                     Image(systemName: entry.kind == .image ? "photo" : "text.alignleft")
@@ -207,7 +203,7 @@ private struct HistoryRow: View {
         .buttonStyle(.plain)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.7), in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.primary.opacity(0.06)))
-        .help(pastesOnSelect ? "Colar no aplicativo anterior • Clique direito para apenas copiar ou excluir" : "Copiar item • Clique direito para excluir")
+        .help(onPaste != nil ? "Colar no aplicativo anterior • Clique direito para apenas copiar ou excluir" : "Copiar item • Clique direito para excluir")
         .contextMenu {
             Button("Copiar", action: onCopy)
             Button("Excluir do histórico", role: .destructive, action: onDelete)

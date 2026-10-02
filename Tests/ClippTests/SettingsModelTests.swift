@@ -16,6 +16,8 @@ final class SettingsModelTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         let model = ClipboardModel(pasteboard: pasteboard, directory: directory, defaults: defaults)
+        model.isHistoryVisible = true
+        model.isSettingsVisible = true
         let store = try XCTUnwrap(model.store)
         func capture(_ text: String) async {
             pasteboard.clearContents()
@@ -87,12 +89,14 @@ final class SettingsModelTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         let model = ClipboardModel(pasteboard: pasteboard, directory: directory, defaults: defaults)
+        model.isHistoryVisible = true
+        model.isSettingsVisible = true
         let store = try XCTUnwrap(model.store)
         pasteboard.clearContents()
         XCTAssertTrue(pasteboard.setString(String(repeating: "Histórico 📝 ", count: 16_000), forType: .string))
         await model.poll()
         XCTAssertEqual(model.total, 1)
-        let usageBefore = model.diskUsage.historyBytes
+        let usageBefore = model.diskUsage
         XCTAssertGreaterThan(usageBefore, 0)
 
         await model.clearHistory()
@@ -103,8 +107,8 @@ final class SettingsModelTests: XCTestCase {
         let clearedCount = try await store.count()
         XCTAssertEqual(clearedCount, 0)
         // An empty SQLite database still occupies disk space.
-        XCTAssertGreaterThan(model.diskUsage.historyBytes, 0)
-        XCTAssertLessThan(model.diskUsage.historyBytes, usageBefore)
+        XCTAssertGreaterThan(model.diskUsage, 0)
+        XCTAssertLessThan(model.diskUsage, usageBefore)
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("Backups").path))
         XCTAssertEqual(model.settingsMessage, "Histórico limpo.")
 
@@ -131,6 +135,8 @@ final class SettingsModelTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         let model = ClipboardModel(pasteboard: pasteboard, directory: directory, defaults: defaults)
+        model.isHistoryVisible = true
+        model.isSettingsVisible = true
         func capture(_ text: String) async {
             pasteboard.clearContents()
             XCTAssertTrue(pasteboard.setString(text, forType: .string))

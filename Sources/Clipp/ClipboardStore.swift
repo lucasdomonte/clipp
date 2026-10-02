@@ -29,10 +29,6 @@ struct ClipboardEntry: Identifiable, Sendable {
     let byteCount: Int
 }
 
-struct DiskUsage: Sendable {
-    let historyBytes: Int64
-}
-
 private enum ClipboardStoreError: LocalizedError {
     case sqlite(Int32, String)
     case invalidContent
@@ -150,24 +146,22 @@ actor ClipboardStore {
         }
     }
 
-    func fetch(query: String = "", limit: Int = 100, offset: Int = 0,
-               before: ClipboardEntry? = nil) throws -> [ClipboardEntry] {
-        guard limit > 0, offset >= 0 else { throw ClipboardStoreError.invalidContent }
-        let cursorClause = before == nil ? "" : "AND (created_at, id) < (?5, ?6)"
+    func fetch(query: String = "", limit: Int = 100, before: ClipboardEntry? = nil) throws -> [ClipboardEntry] {
+        guard limit > 0 else { throw ClipboardStoreError.invalidContent }
         // ponytail: literal substring search scans text; add FTS when the history makes search slow.
+        let searchClause = query.isEmpty ? "" : "AND instr(lower(text), lower(?2)) > 0"
+        let cursorClause = before == nil ? "" : "AND (created_at, id) < (?3, ?4)"
         return try withStatement("""
             SELECT id, kind, preview, thumbnail, created_at, source_app, byte_count
             FROM clipboard_entries
-            WHERE (?1 = '' OR instr(lower(text), lower(?2)) > 0) \(cursorClause)
-            ORDER BY created_at DESC, id DESC LIMIT ?3 OFFSET ?4
+            WHERE 1 \(searchClause) \(cursorClause)
+            ORDER BY created_at DESC, id DESC LIMIT ?1
             """) { statement in
-            try bind(query, at: 1, to: statement)
-            try bind(query, at: 2, to: statement)
-            try check(sqlite3_bind_int64(statement, 3, Int64(limit)))
-            try check(sqlite3_bind_int64(statement, 4, Int64(offset)))
+            try check(sqlite3_bind_int64(statement, 1, Int64(limit)))
+            if !query.isEmpty { try bind(query, at: 2, to: statement) }
             if let before {
-                try check(sqlite3_bind_double(statement, 5, before.createdAt.timeIntervalSince1970))
-                try check(sqlite3_bind_int64(statement, 6, before.id))
+                try check(sqlite3_bind_double(statement, 3, before.createdAt.timeIntervalSince1970))
+                try check(sqlite3_bind_int64(statement, 4, before.id))
             }
             var entries: [ClipboardEntry] = []
             while true {
@@ -219,8 +213,8 @@ actor ClipboardStore {
     func prune(keeping limit: Int) throws -> Int {
         guard limit >= 1 else { throw ClipboardStoreError.invalidContent }
         let removed = try withStatement("""
-            DELETE FROM clipboard_entries WHERE id IN (
-                SELECT id FROM clipboard_entries ORDER BY created_at DESC, id DESC LIMIT -1 OFFSET ?
+            DELETE FROM clipboard_entries WHERE (created_at, id) <= (
+                SELECT created_at, id FROM clipboard_entries ORDER BY created_at DESC, id DESC LIMIT 1 OFFSET ?
             )
             """) { statement in
             try check(sqlite3_bind_int64(statement, 1, Int64(limit)))
@@ -231,7 +225,7 @@ actor ClipboardStore {
         return removed
     }
 
-    func diskUsage() throws -> DiskUsage {
+    func diskUsage() throws -> Int64 {
         func allocatedBytes(_ url: URL) throws -> Int64 {
             let values = try url.resourceValues(forKeys: [.fileAllocatedSizeKey, .fileSizeKey])
             return Int64(values.fileAllocatedSize ?? values.fileSize ?? 0)
@@ -242,7 +236,7 @@ actor ClipboardStore {
             do { history += try allocatedBytes(url) }
             catch let error as CocoaError where error.code == .fileReadNoSuchFile { continue }
         }
-        return DiskUsage(historyBytes: history)
+        return history
     }
 
     func clear() throws {
