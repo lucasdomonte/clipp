@@ -1,5 +1,7 @@
 # Clipp
 
+<img src="Resources/IconConcepts/clipp-paperclip-v5-framed-cutout.png" width="96" alt="Ícone do Clipp: clipe vazado em uma moldura azul">
+
 Histórico de clipboard para macOS, feito em Swift. Fica na barra de menus: clique no ícone para ver textos e imagens com data e hora, buscar, copiar novamente, excluir itens ou pausar a captura. A engrenagem abre as configurações em uma janela própria. O atalho global abre o histórico na posição do mouse e permite colar no aplicativo anterior.
 
 ## Instalar pelo DMG
@@ -17,9 +19,15 @@ Esta versão usa um **certificado local autossinado fixo**, adequado para testes
 
 Autorize as notificações se quiser avisos ao copiar. A permissão de Acessibilidade é opcional e serve para a colagem automática: use **Autorizar colagem automática** nas configurações. Sem ela, copie pelo histórico e cole manualmente com **⌘V**. O histórico é local; o DMG inclui apenas o aplicativo e as instruções, sem dados ou preferências de quem gerou o instalador.
 
-**Ao atualizar de uma versão anterior à 0.5.1:** encerre o Clipp, remova a entrada antiga em **Ajustes do Sistema → Privacidade e Segurança → Acessibilidade**, adicione `/Applications/Clipp.app`, habilite e reabra o aplicativo. Essa troca de identidade exige renovar a autorização uma vez. A versão 0.5.2 reutiliza o certificado da 0.5.1; confira a preservação da permissão no Mac após a atualização, testando a colagem em um campo de texto.
+**Ao atualizar de uma versão anterior à 0.5.1:** encerre o Clipp, remova a entrada antiga em **Ajustes do Sistema → Privacidade e Segurança → Acessibilidade**, adicione `/Applications/Clipp.app`, habilite e reabra o aplicativo. Essa troca de identidade exige renovar a autorização uma vez. A versão 0.5.3 reutiliza o certificado da 0.5.1; confira a preservação da permissão no Mac após a atualização, testando a colagem em um campo de texto.
 
 Quem recebe o instalador não precisa importar certificados, receber a chave privada nem alterar a confiança em certificados raiz.
+
+## Novidades da versão 0.5.3
+
+- Novo ícone com moldura e clipe grosso vazado, sem cérebro, no aplicativo e na barra de menus.
+- A barra usa a versão monocromática do ícone, adaptada pelo macOS ao tema claro ou escuro.
+- Mesma identidade de assinatura local; histórico e configurações existentes são preservados.
 
 ## Novidades da versão 0.5.2
 
@@ -44,10 +52,10 @@ Gera `dist/Clipp-<versão>-universal.dmg` com binário para Apple Silicon e Inte
 Com os dois arquivos baixados na mesma pasta, confira a integridade:
 
 ```sh
-shasum -a 256 -c Clipp-0.5.2-universal.dmg.sha256
+shasum -a 256 -c Clipp-0.5.3-universal.dmg.sha256
 ```
 
-O resultado esperado é `Clipp-0.5.2-universal.dmg: OK`. O checksum confere o arquivo baixado; não substitui a confiança na origem do instalador.
+O resultado esperado é `Clipp-0.5.3-universal.dmg: OK`. O checksum confere o arquivo baixado; não substitui a confiança na origem do instalador.
 
 ## Executar
 

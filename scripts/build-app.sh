@@ -29,7 +29,7 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin_dir/Clipp" "$app/Contents/MacOS/Clipp"
 cp "$root/Resources/Info.plist" "$app/Contents/Info.plist"
 
-icon="$root/Resources/IconConcepts/clipp-paperclip-brain-v3-transparent.png"
+icon="$root/Resources/IconConcepts/clipp-paperclip-v5-framed-cutout.png"
 iconset="$root/.build/Clipp.iconset"
 mkdir -p "$iconset"
 for size in 16 32 128 256 512; do
